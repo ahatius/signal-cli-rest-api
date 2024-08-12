@@ -12,6 +12,7 @@ env:
   GITHUB_ACTOR: ${{ github.actor }}
   GITHUB_TOKEN: ${{ github.token }}
   REPO_OWNER: ${{ github.repository_owner }}
+  VERSION: ${{ github.event.inputs.version }}
 
 jobs:
   setup:
@@ -38,8 +39,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push
         uses: docker/build-push-action@v5
-        env:
-          VERSION: ${{ github.event.inputs.version }}
         with:
           context: .
           platforms: linux/amd64
