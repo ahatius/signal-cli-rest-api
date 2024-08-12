@@ -3,10 +3,7 @@ name: ci
 on:
   push:
     branches:
-      - '**' #every branch
-  pull_request:
-    branches:
-      - '**' #every branch
+      - 'build' #every branch
 
 jobs:
   setup:
