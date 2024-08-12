@@ -45,4 +45,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/ahatius/signal-cli-rest-api:latest
-            ghcr.io/ahatius/signal-cli-rest-api:${{VERSION}}
+            ghcr.io/ahatius/signal-cli-rest-api:${{ github.event.inputs.version }}
