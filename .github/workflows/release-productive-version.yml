@@ -7,6 +7,11 @@ on:
         description: 'Version'     
         required: true
 
+env:
+  REGISTRY: ghcr.io
+  GITHUB_ACTOR: ${{ github.actor }}
+  GITHUB_TOKEN: ${{ github.token }}
+  REPO_OWNER: ${{ github.repository_owner }}
 
 jobs:
   setup:
@@ -25,17 +30,18 @@ jobs:
       - uses: actions/checkout@master
         with:
           ref: ${{ github.ref }}
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Release
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-        run: |
-          echo "Start CI build"
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          docker buildx create --name multibuilder
-          docker buildx use multibuilder
-          docker buildx build --build-arg BUILD_VERSION_ARG=${VERSION} --platform linux/amd64,linux/arm64,linux/arm/v7 -t ahatius/signal-cli-rest-api:${VERSION} -t ahatius/signal-cli-rest-api:latest . --push
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/ahatius/signal-cli-rest-api:latest
+            ghcr.io/ahatius/signal-cli-rest-api:${{VERSION}}
