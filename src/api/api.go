@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ type CreateGroupRequest struct {
 	Description    string           `json:"description"`
 	Permissions    GroupPermissions `json:"permissions"`
 	GroupLinkState string           `json:"group_link" enums:"disabled,enabled,enabled-with-approval"`
+	ExpirationTime *int             `json:"expiration_time"`
 }
 
 type UpdateGroupRequest struct {
@@ -143,8 +145,9 @@ type CreateGroupResponse struct {
 }
 
 type UpdateProfileRequest struct {
-	Name         string `json:"name"`
-	Base64Avatar string `json:"base64_avatar"`
+	Name         string  `json:"name"`
+	Base64Avatar string  `json:"base64_avatar"`
+	About        *string `json:"about"`
 }
 
 type TrustIdentityRequest struct {
@@ -230,7 +233,11 @@ func (a *Api) About(c *gin.Context) {
 // @Param data body RegisterNumberRequest false "Additional Settings"
 // @Router /v1/register/{number} [post]
 func (a *Api) RegisterNumber(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	var req RegisterNumberRequest
 
@@ -253,7 +260,7 @@ func (a *Api) RegisterNumber(c *gin.Context) {
 		return
 	}
 
-	err := a.signalClient.RegisterNumber(number, req.UseVoice, req.Captcha)
+	err = a.signalClient.RegisterNumber(number, req.UseVoice, req.Captcha)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -272,7 +279,11 @@ func (a *Api) RegisterNumber(c *gin.Context) {
 // @Param data body UnregisterNumberRequest false "Additional Settings"
 // @Router /v1/unregister/{number} [post]
 func (a *Api) UnregisterNumber(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	deleteAccount := false
 	deleteLocalData := false
@@ -290,7 +301,7 @@ func (a *Api) UnregisterNumber(c *gin.Context) {
 		deleteLocalData = req.DeleteLocalData
 	}
 
-	err := a.signalClient.UnregisterNumber(number, deleteAccount, deleteLocalData)
+	err = a.signalClient.UnregisterNumber(number, deleteAccount, deleteLocalData)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -310,7 +321,11 @@ func (a *Api) UnregisterNumber(c *gin.Context) {
 // @Param token path string true "Verification Code"
 // @Router /v1/register/{number}/verify/{token} [post]
 func (a *Api) VerifyRegisteredNumber(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	token := c.Param("token")
 
 	pin := ""
@@ -337,7 +352,7 @@ func (a *Api) VerifyRegisteredNumber(c *gin.Context) {
 		return
 	}
 
-	err := a.signalClient.VerifyRegisteredNumber(number, token, pin)
+	err = a.signalClient.VerifyRegisteredNumber(number, token, pin)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -564,7 +579,11 @@ func StringToBool(input string) bool {
 // @Param send_read_receipts query string false "Specify whether read receipts should be sent when receiving messages" (default: false)"
 // @Router /v1/receive/{number} [get]
 func (a *Api) Receive(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if a.signalClient.GetSignalCliMode() == client.JsonRpc {
 		ws, err := connectionUpgrader.Upgrade(c.Writer, c.Request, nil)
@@ -631,10 +650,14 @@ func (a *Api) Receive(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Router /v1/groups/{number} [post]
 func (a *Api) CreateGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	var req CreateGroupRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -668,7 +691,7 @@ func (a *Api) CreateGroup(c *gin.Context) {
 		groupLinkState = groupLinkState.FromString(req.GroupLinkState)
 	}
 
-	groupId, err := a.signalClient.CreateGroup(number, req.Name, req.Members, req.Description, editGroupPermission, addMembersPermission, groupLinkState)
+	groupId, err := a.signalClient.CreateGroup(number, req.Name, req.Members, req.Description, editGroupPermission, addMembersPermission, groupLinkState, req.ExpirationTime)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
 		return
@@ -686,9 +709,14 @@ func (a *Api) CreateGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body ChangeGroupMembersRequest true "Members"
 // @Param number path string true "Registered Phone Number"
+// @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/members [post]
 func (a *Api) AddMembersToGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -701,7 +729,7 @@ func (a *Api) AddMembersToGroup(c *gin.Context) {
 	}
 
 	var req ChangeGroupMembersRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -730,9 +758,14 @@ func (a *Api) AddMembersToGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body ChangeGroupMembersRequest true "Members"
 // @Param number path string true "Registered Phone Number"
+// @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/members [delete]
 func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -745,7 +778,7 @@ func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
 	}
 
 	var req ChangeGroupMembersRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -774,9 +807,14 @@ func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body ChangeGroupAdminsRequest true "Admins"
 // @Param number path string true "Registered Phone Number"
+// @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/admins [post]
 func (a *Api) AddAdminsToGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -789,7 +827,7 @@ func (a *Api) AddAdminsToGroup(c *gin.Context) {
 	}
 
 	var req ChangeGroupAdminsRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -818,9 +856,14 @@ func (a *Api) AddAdminsToGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body ChangeGroupAdminsRequest true "Admins"
 // @Param number path string true "Registered Phone Number"
+// @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/admins [delete]
 func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -833,7 +876,7 @@ func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
 	}
 
 	var req ChangeGroupAdminsRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -863,7 +906,11 @@ func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Router /v1/groups/{number} [get]
 func (a *Api) GetGroups(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	groups, err := a.signalClient.GetGroups(number)
 	if err != nil {
@@ -885,7 +932,11 @@ func (a *Api) GetGroups(c *gin.Context) {
 // @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid} [get]
 func (a *Api) GetGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	groupId := c.Param("groupid")
 
 	groupEntry, err := a.signalClient.GetGroup(number, groupId)
@@ -913,7 +964,11 @@ func (a *Api) GetGroup(c *gin.Context) {
 // @Router /v1/groups/{number}/{groupid} [delete]
 func (a *Api) DeleteGroup(c *gin.Context) {
 	base64EncodedGroupId := c.Param("groupid")
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if base64EncodedGroupId == "" {
 		c.JSON(400, Error{Msg: "Please specify a group id"})
@@ -1090,7 +1145,11 @@ func (a *Api) ServeAttachment(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Router /v1/profiles/{number} [put]
 func (a *Api) UpdateProfile(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
@@ -1098,7 +1157,7 @@ func (a *Api) UpdateProfile(c *gin.Context) {
 	}
 
 	var req UpdateProfileRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		log.Error(err.Error())
@@ -1110,7 +1169,7 @@ func (a *Api) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	err = a.signalClient.UpdateProfile(number, req.Name, req.Base64Avatar)
+	err = a.signalClient.UpdateProfile(number, req.Name, req.Base64Avatar, req.About)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
 		return
@@ -1137,7 +1196,11 @@ func (a *Api) Health(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Router /v1/identities/{number} [get]
 func (a *Api) ListIdentities(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
@@ -1163,7 +1226,11 @@ func (a *Api) ListIdentities(c *gin.Context) {
 // @Param numberToTrust path string true "Number To Trust"
 // @Router /v1/identities/{number}/trust/{numberToTrust} [put]
 func (a *Api) TrustIdentity(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
@@ -1177,7 +1244,7 @@ func (a *Api) TrustIdentity(c *gin.Context) {
 	}
 
 	var req TrustIdentityRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		log.Error(err.Error())
@@ -1274,7 +1341,11 @@ func (a *Api) GetConfiguration(c *gin.Context) {
 // @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/block [post]
 func (a *Api) BlockGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1307,7 +1378,11 @@ func (a *Api) BlockGroup(c *gin.Context) {
 // @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/join [post]
 func (a *Api) JoinGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1340,7 +1415,11 @@ func (a *Api) JoinGroup(c *gin.Context) {
 // @Param groupid path string true "Group ID"
 // @Router /v1/groups/{number}/{groupid}/quit [post]
 func (a *Api) QuitGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1373,7 +1452,11 @@ func (a *Api) QuitGroup(c *gin.Context) {
 // @Param data body UpdateGroupRequest true "Input Data"
 // @Router /v1/groups/{number}/{groupid} [put]
 func (a *Api) UpdateGroup(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1420,7 +1503,11 @@ func (a *Api) SendReaction(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if req.Recipient == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - recipient missing"})
@@ -1468,7 +1555,11 @@ func (a *Api) RemoveReaction(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if req.Recipient == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - recipient missing"})
@@ -1511,7 +1602,11 @@ func (a *Api) SendReceipt(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
@@ -1561,7 +1656,11 @@ func (a *Api) SendStartTyping(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1594,7 +1693,11 @@ func (a *Api) SendStopTyping(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1625,7 +1728,11 @@ func (a *Api) SearchForNumbers(c *gin.Context) {
 		return
 	}
 
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	searchResults, err := a.signalClient.SearchForNumbers(number, query["numbers"])
 	if err != nil {
@@ -1653,14 +1760,18 @@ func (a *Api) SearchForNumbers(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/contacts/{number} [put]
 func (a *Api) UpdateContact(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req UpdateContactRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1690,14 +1801,18 @@ func (a *Api) UpdateContact(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/devices/{number} [post]
 func (a *Api) AddDevice(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req AddDeviceRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1722,14 +1837,18 @@ func (a *Api) AddDevice(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/configuration/{number}/settings [post]
 func (a *Api) SetTrustMode(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req TrustModeRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1761,13 +1880,16 @@ func (a *Api) SetTrustMode(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/configuration/{number}/settings [get]
 func (a *Api) GetTrustMode(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
-	var err error
 	trustMode := TrustModeResponse{}
 	trustMode.TrustMode, err = utils.TrustModeToString(a.signalClient.GetTrustMode(number))
 	if err != nil {
@@ -1789,13 +1911,17 @@ func (a *Api) GetTrustMode(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/contacts/{number}/sync [post]
 func (a *Api) SendContacts(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
-	err := a.signalClient.SendContacts(number)
+	err = a.signalClient.SendContacts(number)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
 		return
@@ -1814,14 +1940,18 @@ func (a *Api) SendContacts(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/accounts/{number}/rate-limit-challenge [post]
 func (a *Api) SubmitRateLimitChallenge(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req RateLimitChallengeRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1846,14 +1976,18 @@ func (a *Api) SubmitRateLimitChallenge(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/accounts/{number}/settings [put]
 func (a *Api) UpdateAccountSettings(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req UpdateAccountSettingsRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1880,14 +2014,18 @@ func (a *Api) UpdateAccountSettings(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/accounts/{number}/username [post]
 func (a *Api) SetUsername(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req SetUsernameRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1911,13 +2049,17 @@ func (a *Api) SetUsername(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Router /v1/accounts/{number}/username [delete]
 func (a *Api) RemoveUsername(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
-	err := a.signalClient.RemoveUsername(number)
+	err = a.signalClient.RemoveUsername(number)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
 		return
@@ -1936,7 +2078,11 @@ func (a *Api) RemoveUsername(c *gin.Context) {
 // @Success 200 {object} []client.ListInstalledStickerPacksResponse
 // @Router /v1/sticker-packs/{number} [get]
 func (a *Api) ListInstalledStickerPacks(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
@@ -1962,14 +2108,18 @@ func (a *Api) ListInstalledStickerPacks(c *gin.Context) {
 // @Param data body AddStickerPackRequest true "Request"
 // @Router /v1/sticker-packs/{number} [post]
 func (a *Api) AddStickerPack(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
 		return
 	}
 
 	var req AddStickerPackRequest
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
 		return
@@ -1992,7 +2142,11 @@ func (a *Api) AddStickerPack(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Router /v1/contacts/{number} [get]
 func (a *Api) ListContacts(c *gin.Context) {
-	number := c.Param("number")
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
 
 	if number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - number missing"})
