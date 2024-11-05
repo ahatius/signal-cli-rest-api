@@ -1,4 +1,7 @@
 {
+    "schemes": [
+        "http"
+    ],
     "swagger": "2.0",
     "info": {
         "description": "This is the Signal Cli REST API documentation.",
@@ -6,6 +9,7 @@
         "contact": {},
         "version": "1.0"
     },
+    "host": "localhost:8080",
     "basePath": "/",
     "paths": {
         "/v1/about": {
@@ -1408,6 +1412,13 @@
                         "schema": {
                             "$ref": "#/definitions/api.Reaction"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1446,6 +1457,13 @@
                         "schema": {
                             "$ref": "#/definitions/api.Reaction"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1486,6 +1504,13 @@
                         "schema": {
                             "$ref": "#/definitions/api.Receipt"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -2435,6 +2460,9 @@
         "api.UpdateProfileRequest": {
             "type": "object",
             "properties": {
+                "about": {
+                    "type": "string"
+                },
                 "base64_avatar": {
                     "type": "string"
                 },

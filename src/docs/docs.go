@@ -1415,6 +1415,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.Reaction"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1453,6 +1460,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.Reaction"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1493,6 +1507,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.Receipt"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered phone number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -2442,6 +2463,9 @@ const docTemplate = `{
         "api.UpdateProfileRequest": {
             "type": "object",
             "properties": {
+                "about": {
+                    "type": "string"
+                },
                 "base64_avatar": {
                     "type": "string"
                 },
@@ -2681,9 +2705,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "",
+	Host:             "localhost:8080",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"http"},
 	Title:            "Signal Cli REST API",
 	Description:      "This is the Signal Cli REST API documentation.",
 	InfoInstanceName: "swagger",
